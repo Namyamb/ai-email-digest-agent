@@ -1,0 +1,83 @@
+Objective
+
+Design and implement a proof-of-concept (POC) system where an AI Agent monitors an email inbox, reads incoming messages, categorizes them, and produces a daily summary email. The summary should clearly distinguish between:
+	1.	Items Requiring Attention – Messages that need action or response.
+	2.	Items to Review Later – Messages that are informational and may be useful at a later stage.
+	3.	Items of No Immediate Relevance – Messages that can be ignored (e.g., spam, promotions).
+
+⸻
+
+Challenge Requirements
+
+1. Email Access
+	•	Connect securely to a mailbox (Gmail, Outlook, or a test IMAP inbox).
+	•	Retrieve unread emails for processing.
+
+2. AI Summarization Agent
+	•	Use a secure LLM approach. Options include:
+	•	A local/self-hosted open-source LLM.
+	•	An API-based LLM with safeguards (e.g., anonymizing/redacting sensitive content before sending).
+	•	Summarize each email in a concise, human-readable form.
+	•	Categorize each email into one of the three defined categories.
+	•	Generate a single consolidated daily summary.
+
+3. Output / Reporting
+	•	The AI Agent should send the summary as an email to the same mailbox (or a designated reporting email).
+	•	The summary must be presented in a professional, business-friendly format as follows:
+
+⸻
+
+Daily Email Digest
+
+Items Requiring Attention
+	•	[Sender, Subject] – Concise summary highlighting the key issue or action needed.
+	•	[Sender, Subject] – Concise summary highlighting the key issue or action needed.
+
+Items to Review Later
+	•	[Sender, Subject] – Summary of content that is informative but not urgent.
+	•	[Sender, Subject] – Summary of content that can be retained for future reference.
+
+Items of No Immediate Relevance
+	•	[Sender, Subject] – Brief note on why the email can be disregarded (e.g., promotional content, spam).
+
+⸻
+
+Security & Data Safety
+	•	Ensure confidentiality of email content at all times.
+	•	Avoid hardcoding credentials; use environment variables or secure credential storage.
+	•	If using an external LLM API, implement a step to mask or redact personal identifiers before sending text for processing.
+
+⸻
+
+Expectations
+
+We do not expect a production-ready solution. Instead, we are evaluating your ability to:
+	•	Design a clear and logical system architecture.
+	•	Demonstrate awareness of data privacy and security.
+	•	Write clean, modular code (Python preferred).
+	•	Document your thought process and decisions.
+
+⸻
+
+Deliverables
+	1.	Codebase – with clear setup instructions.
+	2.	README.md containing:
+	•	Approach and design considerations.
+	•	Security measures taken.
+	•	Libraries/LLMs used.
+	•	Step-by-step instructions to run the system.
+	3.	(Optional but recommended) A simple solution architecture diagram.
+
+⸻
+
+Time Allocation
+	•	Estimated effort: 2-4 days.
+	•	Focus on building a working prototype with good practices rather than over-engineering.
+
+⸻
+
+Bonus Points
+	•	Using an open-source LLM (e.g., LLaMA, Mistral, GPT4All) to keep data processing fully local.
+	•	Introducing a priority scoring system (e.g., marking emails from leadership as high priority).
+	•	Packaging the solution into a Docker container for easy deployment.
+	•	Added: Parallel Background AI Invoice Extractor with Offline OCR (JPG/PDF) to CSV.

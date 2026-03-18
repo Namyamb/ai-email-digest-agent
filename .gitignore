@@ -1,0 +1,20 @@
+# Virtual Environment
+venv/
+env/
+.env
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Authentication / Secrets (CRITICAL FOR GMAIL API)
+credentials.json
+token.json
+token.pickle
+
+# Video Documentation (Too large for Git)
+*.mp4
+
+# Generated Outputs
+output.log
+invoices_extracted_*.csv
