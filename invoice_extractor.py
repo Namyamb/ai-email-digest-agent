@@ -38,24 +38,24 @@ logger = logging.getLogger("invoice_extractor")
 OUTPUT_CSV = f"invoices_extracted_{date.today().strftime('%Y-%m-%d')}.csv"
 
 CSV_HEADERS = [
-    "source_email_id",
-    "attachment_filename",
-    "invoice_number",
-    "invoice_date",
-    "vendor_name",
-    "vendor_email",
-    "vendor_phone",
-    "client_name",
-    "line_items",
-    "subtotal",
-    "tax",
-    "discount",
-    "final_total",
-    "currency",
-    "due_date",
-    "payment_status",
-    "extraction_status",
-    "error_note"
+    "Vendor Name",
+    "Final Total",
+    "Currency",
+    "Due Date",
+    "Payment Status",
+    "Extraction Status",
+    "Invoice Number",
+    "Line Items (Summary)",
+    "Invoice Date",
+    "Subtotal",
+    "Tax",
+    "Discount",
+    "Vendor Email",
+    "Vendor Phone",
+    "Client Name",
+    "Attachment Filename",
+    "Source Email Link",
+    "Error Notes"
 ]
 
 # ──────────────────────────────────────────────
@@ -63,7 +63,8 @@ CSV_HEADERS = [
 # ──────────────────────────────────────────────
 INVOICE_KEYWORDS = [
     "invoice", "bill", "receipt", "payment", "statement",
-    "order", "purchase", "transaction", "proforma", "tax_invoice"
+    "order", "purchase", "transaction", "proforma", "tax_invoice",
+    "utility", "salary", "slip", "gst", "vat", "service", "booking", "summary"
 ]
 
 SUPPORTED_EXTENSIONS = {
@@ -71,19 +72,31 @@ SUPPORTED_EXTENSIONS = {
     "png":  "image",
     "jpg":  "image",
     "jpeg": "image",
-    "json": "json"
+    "csv":  "csv",
+    "doc":  "word",
+    "docx": "word"
 }
 
 
 # ============================================================
 # STEP 1: Check if an attachment is likely an invoice
 # ============================================================
-def is_invoice_attachment(filename: str) -> bool:
+def is_invoice_attachment(filename: str, email_subject: str = "") -> bool:
     name_lower = filename.lower()
     ext = name_lower.rsplit(".", 1)[-1] if "." in name_lower else ""
     if ext not in SUPPORTED_EXTENSIONS:
         return False
-    return any(kw in name_lower for kw in INVOICE_KEYWORDS)
+    
+    # Check if filename contains trigger keywords
+    if any(kw in name_lower for kw in INVOICE_KEYWORDS):
+        return True
+        
+    # Fallback: if filename is generic (like "document.pdf") but subject says "invoice"
+    subject_lower = email_subject.lower()
+    if any(kw in subject_lower for kw in INVOICE_KEYWORDS):
+        return True
+        
+    return False
 
 
 # ============================================================
@@ -175,14 +188,46 @@ def extract_text_from_image(file_bytes: bytes) -> str:
 
 
 # ============================================================
-# STEP 3C: Extract text from JSON attachment
+# STEP 3C: Extract text from CSV attachment
 # ============================================================
-def extract_text_from_json(file_bytes: bytes) -> str:
+def extract_text_from_csv(file_bytes: bytes) -> str:
     try:
-        data = json.loads(file_bytes.decode("utf-8"))
-        return json.dumps(data, indent=2)
+        text = file_bytes.decode("utf-8", errors="replace")
+        return text.strip()
     except Exception as e:
-        logger.warning(f"JSON extraction failed: {e}")
+        logger.warning(f"CSV extraction failed: {e}")
+        return ""
+
+# ============================================================
+# STEP 3D: Extract text from Word attachment
+# ============================================================
+def extract_text_from_word(file_bytes: bytes) -> str:
+    try:
+        import docx
+        import io
+        doc = docx.Document(io.BytesIO(file_bytes))
+        fullText = []
+        
+        # 1. Extract from standard paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                fullText.append(para.text.strip())
+        
+        # 2. Extract from tables (Crucial for invoices!)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    # Collect text from paragraphs inside the cell
+                    for para in cell.paragraphs:
+                        if para.text.strip():
+                            fullText.append(para.text.strip())
+        
+        return "\n".join(fullText).strip()
+    except ImportError:
+        logger.error("python-docx is not installed. Please install it using 'pip install python-docx'.")
+        return ""
+    except Exception as e:
+        logger.warning(f"Word extraction failed: {e}")
         return ""
 
 
@@ -197,8 +242,10 @@ def extract_text_from_attachment(filename: str, file_bytes: bytes) -> str:
         return extract_text_from_pdf(file_bytes)
     elif fmt == "image":
         return extract_text_from_image(file_bytes)
-    elif fmt == "json":
-        return extract_text_from_json(file_bytes)
+    elif fmt == "csv":
+        return extract_text_from_csv(file_bytes)
+    elif fmt == "word":
+        return extract_text_from_word(file_bytes)
     else:
         logger.warning(f"Unsupported format for: {filename}")
         return ""
@@ -265,7 +312,10 @@ Return ONLY a valid raw JSON object (no markdown, no explanation) with these exa
 }}
 
 Rules:
-- "line_items" should be a single string summary: "ItemA x2 @$10=$20; ItemB x1 @$5=$5"
+- "line_items" should be a neat, numbered list using newline characters (\\n). e.g.:
+   1. Item Name - Qty: X - Unit Price: $Y - Total: $Z
+   2. Item Name - Qty: X - Unit Price: $Y - Total: $Z
+- All monetary fields (subtotal, tax, discount, final_total) MUST include the currency symbol (e.g., $150.00, €30.00) and proper decimal formatting.
 - Sensitive fields (card numbers, account numbers) already appear as REDACTED_* tokens — keep them as-is
 - Do NOT add fields not listed above
 
@@ -305,13 +355,34 @@ def _fallback_parse(raw: str) -> dict:
 # STEP 7: Write one row to the dated CSV
 # ============================================================
 def append_to_csv(row: dict):
-    file_exists = os.path.exists(OUTPUT_CSV)
-    with open(OUTPUT_CSV, mode="a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
-    logger.info(f"✅ Invoice row saved to {OUTPUT_CSV}")
+    global OUTPUT_CSV
+    
+    def try_write(filename):
+        file_exists = os.path.exists(filename)
+        with open(filename, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(row)
+        return filename
+
+    try:
+        saved_path = try_write(OUTPUT_CSV)
+        logger.info(f"✅ Invoice row saved to {saved_path}")
+    except PermissionError:
+        # If locked, try a secondary file name so the data isn't lost
+        alt_name = OUTPUT_CSV.replace(".csv", "_v2.csv")
+        logger.warning(f"⚠️ {OUTPUT_CSV} is LOCKED (open in Excel?). Trying {alt_name} instead...")
+        try:
+            saved_path = try_write(alt_name)
+            logger.info(f"✅ Invoice row saved to fallback file: {saved_path}")
+        except PermissionError:
+            logger.error("❌ CRITICAL: Both primary and fallback CSV files are LOCKED. "
+                         "Close your Excel/CSV viewers and try again.")
+            raise
+    except Exception as e:
+        logger.error(f"❌ Failed to write to CSV: {e}")
+        raise
 
 
 # ============================================================
@@ -342,7 +413,7 @@ def process_email_for_invoices(service, message_id: str, email_subject: str, par
             if not filename:
                 continue
 
-            if not is_invoice_attachment(filename):
+            if not is_invoice_attachment(filename, email_subject):
                 continue
 
             found_any = True
@@ -368,48 +439,52 @@ def process_email_for_invoices(service, message_id: str, email_subject: str, par
                 # LLM extraction
                 fields = extract_invoice_fields_via_llm(redacted_text, filename)
 
+                # Generate a clickable Gmail link
+                gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
+
                 row = {
-                    "source_email_id":    message_id,
-                    "attachment_filename": filename,
-                    "invoice_number":      fields.get("invoice_number",  "N/A"),
-                    "invoice_date":        fields.get("invoice_date",    "N/A"),
-                    "vendor_name":         fields.get("vendor_name",     "N/A"),
-                    "vendor_email":        fields.get("vendor_email",    "N/A"),
-                    "vendor_phone":        fields.get("vendor_phone",    "N/A"),
-                    "client_name":         fields.get("client_name",     "N/A"),
-                    "line_items":          fields.get("line_items",      "N/A"),
-                    "subtotal":            fields.get("subtotal",        "N/A"),
-                    "tax":                 fields.get("tax",             "N/A"),
-                    "discount":            fields.get("discount",        "N/A"),
-                    "final_total":         fields.get("final_total",     "N/A"),
-                    "currency":            fields.get("currency",        "N/A"),
-                    "due_date":            fields.get("due_date",        "N/A"),
-                    "payment_status":      fields.get("payment_status",  "N/A"),
-                    "extraction_status":   "SUCCESS",
-                    "error_note":          ""
+                    "Vendor Name":         fields.get("vendor_name",     "N/A"),
+                    "Final Total":         fields.get("final_total",     "N/A"),
+                    "Currency":            fields.get("currency",        "N/A"),
+                    "Due Date":            fields.get("due_date",        "N/A"),
+                    "Payment Status":      fields.get("payment_status",  "N/A"),
+                    "Extraction Status":   "SUCCESS",
+                    "Invoice Number":      fields.get("invoice_number",  "N/A"),
+                    "Line Items (Summary)":fields.get("line_items",      "N/A"),
+                    "Invoice Date":        fields.get("invoice_date",    "N/A"),
+                    "Subtotal":            fields.get("subtotal",        "N/A"),
+                    "Tax":                 fields.get("tax",             "N/A"),
+                    "Discount":            fields.get("discount",        "N/A"),
+                    "Vendor Email":        fields.get("vendor_email",    "N/A"),
+                    "Vendor Phone":        fields.get("vendor_phone",    "N/A"),
+                    "Client Name":         fields.get("client_name",     "N/A"),
+                    "Attachment Filename": filename,
+                    "Source Email Link":   gmail_link,
+                    "Error Notes":         ""
                 }
 
             except Exception as e:
                 logger.error(f"❌ Failed to process {filename}: {e}")
+                gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
                 row = {
-                    "source_email_id":    message_id,
-                    "attachment_filename": filename,
-                    "invoice_number":      "N/A",
-                    "invoice_date":        "N/A",
-                    "vendor_name":         "N/A",
-                    "vendor_email":        "N/A",
-                    "vendor_phone":        "N/A",
-                    "client_name":         "N/A",
-                    "line_items":          "N/A",
-                    "subtotal":            "N/A",
-                    "tax":                 "N/A",
-                    "discount":            "N/A",
-                    "final_total":         "N/A",
-                    "currency":            "N/A",
-                    "due_date":            "N/A",
-                    "payment_status":      "N/A",
-                    "extraction_status":   "FAILED",
-                    "error_note":          str(e)
+                    "Vendor Name":         "N/A",
+                    "Final Total":         "N/A",
+                    "Currency":            "N/A",
+                    "Due Date":            "N/A",
+                    "Payment Status":      "N/A",
+                    "Extraction Status":   "FAILED",
+                    "Invoice Number":      "N/A",
+                    "Line Items (Summary)":"N/A",
+                    "Invoice Date":        "N/A",
+                    "Subtotal":            "N/A",
+                    "Tax":                 "N/A",
+                    "Discount":            "N/A",
+                    "Vendor Email":        "N/A",
+                    "Vendor Phone":        "N/A",
+                    "Client Name":         "N/A",
+                    "Attachment Filename": filename,
+                    "Source Email Link":   gmail_link,
+                    "Error Notes":         str(e)
                 }
 
             append_to_csv(row)
