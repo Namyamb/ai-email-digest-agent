@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Invoice Agent</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main>
+        <header>
+            <h1>AI Invoice Agent</h1>
+            <p class="subtitle">Intelligent invoice extraction & email summarization.</p>
+        </header>
+
+        <section class="controls">
+            <button id="processBtn" class="btn-process">Fetch & Process Emails</button>
+            
+            <input type="file" id="fileInput" hidden accept=".pdf,.doc,.docx,.csv,.png,.jpg,.jpeg">
+            <button id="uploadBtn" class="btn-secondary">Upload Invoices</button>
+            <span id="loader">Processing... This may take a minute.</span>
+            
+            <button id="clearBtn" class="btn-clear">Clear Dashboard</button>
+        </section>
+
+        <div class="data-container">
+            <table>
+                <thead>
+                    <tr id="tableHeader">
+                        <!-- Headers populated dynamically -->
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="10" style="text-align:center; padding: 4rem; color: #64748b;">No data processed yet.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Detail Drawer (Wide Split View) -->
+    <div id="drawerOverlay" class="drawer-overlay"></div>
+    <div id="detailDrawer" class="drawer">
+        <div class="drawer-header" style="border-bottom: 1px solid var(--table-border); padding: 1.5rem 2.5rem;">
+            <h2>Invoice Verification Hub</h2>
+            <button id="closeDrawer" class="close-drawer">&times;</button>
+        </div>
+        <div class="drawer-split-container">
+            <div id="drawerContent" class="drawer-info-panel">
+                <!-- Data goes here -->
+            </div>
+            <div id="drawerPreview" class="drawer-preview-panel">
+                <!-- Original Document embedded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Modal -->
+    <div id="modalOverlay" class="modal-overlay"></div>
+    <div id="customModal" class="modal">
+        <h3 id="modalTitle">Confirm Action</h3>
+        <p id="modalMessage">Are you sure?</p>
+        <div class="modal-actions">
+            <button id="modalCancel" class="modal-btn-cancel">Cancel</button>
+            <button id="modalConfirm" class="modal-btn-confirm">Confirm</button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Successfully completed!</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+    <script src="script.js?v=2"></script>
+</body>
+</html>

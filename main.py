@@ -1640,10 +1640,8 @@ def send_email(service, to, subject, html_body):
     service.users().messages().send(userId="me", body=msg).execute()
     print(f"✅ Digest sent to {to}")
 
-# -------------------------------
-# Step 6: Main Execution
-# -------------------------------
-if __name__ == "__main__":
+def run_digest_process():
+    """Executes the full email fetch -> invoice extract -> summarize -> email cycle."""
     creds = authenticate_gmail()
     service = build_resource_service(creds)
     max_results = int(os.getenv("MAX_RESULTS_GROQ", 10))
@@ -1655,13 +1653,18 @@ if __name__ == "__main__":
     print(f"\n📊 Invoice extraction complete. Results saved to: {OUTPUT_CSV}")
 
     digest_html = summarize_and_categorize(emails_list)
-
-    print("\n========== DAILY EMAIL DIGEST ==========\n")
-    print(digest_html)
-
+    
     send_email(
         service,
         to=os.getenv("RECIPIENT_EMAIL"),
         subject=os.getenv("EMAIL_SUBJECT"),
         html_body=digest_html
     )
+    return {
+        "status": "success",
+        "csv_file": OUTPUT_CSV,
+        "digest_preview": digest_html[:500] + "..."
+    }
+
+if __name__ == "__main__":
+    run_digest_process()

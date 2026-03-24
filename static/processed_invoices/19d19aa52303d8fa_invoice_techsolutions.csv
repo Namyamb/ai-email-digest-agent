@@ -1,0 +1,48 @@
+INVOICE,,,,,,
+,,,,,,
+Invoice Number,INV-2024-0087,,,,,
+Invoice Date,15-Mar-2024,,,,,
+Due Date,14-Apr-2024,,,,,
+Payment Terms,Net 30,,,,,
+,,,,,,
+BILLED FROM,,,,,,
+TechSolutions Pvt. Ltd.,,,,,,
+Plot 45, GIDC Estate,,,,,,
+Ahmedabad - 380015,,,,,,
+GSTIN: 24AABCT1234Z1ZX,,,,,,
+Email: billing@techsolutions.in,,,,,,
+Phone: +91-79-4567-8901,,,,,,
+,,,,,,
+BILLED TO,,,,,,
+DataMinds Analytics Pvt. Ltd.,,,,,,
+7th Floor, One BKC,,,,,,
+Mumbai - 400051,,,,,,
+GSTIN: 27AADCD5678P1ZQ,,,,,,
+Email: accounts@dataminds.com,,,,,,
+,,,,,,
+LINE ITEMS,,,,,,
+#,Description,HSN Code,Quantity,Unit Price (INR),Discount,Amount (INR)
+1,Custom CRM Software Development,998314,120 hrs,1500,0%,180000
+2,UI/UX Design Services,998314,40 hrs,1200,5%,45600
+3,API Integration & Testing,998314,30 hrs,1300,0%,39000
+4,Cloud Server Setup (AWS),998315,1,25000,0%,25000
+5,Annual Maintenance Contract,998316,1,35000,10%,31500
+,,,,,,
+SUMMARY,,,,,,
+Subtotal,,,,,, 321100
+CGST @9%,,,,,, 28899
+SGST @9%,,,,,, 28899
+Total Amount (INR),,,,,, 378898
+Amount Paid,,,,,, 100000
+Balance Due (INR),,,,,, 278898
+,,,,,,
+PAYMENT DETAILS,,,,,,
+Bank Name,HDFC Bank,,,,,
+Account Number,50200012345678,,,,,
+IFSC Code,HDFC0001234,,,,,
+Account Type,Current,,,,,
+,,,,,,
+NOTES,,,,,,
+"1. Payment is due within 30 days from invoice date.",,,,,,
+"2. Late payments attract 1.5% interest per month.",,,,,,
+"3. All disputes must be raised within 7 days of receipt.",,,,,,

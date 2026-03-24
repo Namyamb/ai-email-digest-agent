@@ -55,6 +55,7 @@ CSV_HEADERS = [
     "Client Name",
     "Attachment Filename",
     "Source Email Link",
+    "Local File Path",
     "Error Notes"
 ]
 
@@ -388,108 +389,119 @@ def append_to_csv(row: dict):
 # ============================================================
 # MAIN ENTRY POINT — called from main pipeline
 # ============================================================
+def process_single_attachment(service, message_id: str, email_subject: str, filename: str, attachment_id: str = None, file_bytes: bytes = None):
+    """
+    Extracted logic to process a specific attachment.
+    Can be called with attachment_id (for Gmail) OR file_bytes (for manual upload).
+    """
+    # Resolve the local save path upfront so it's available in both success and failure branches
+    static_invoice_dir = os.path.join("static", "processed_invoices")
+    os.makedirs(static_invoice_dir, exist_ok=True)
+    safe_filename = f"{message_id}_{filename}"
+    local_path = os.path.join(static_invoice_dir, safe_filename)
+    local_url = f"/processed_invoices/{safe_filename}"
+
+    try:
+        if not file_bytes and attachment_id:
+            # Download raw bytes from Gmail
+            file_bytes = download_attachment(service, message_id, attachment_id)
+
+        if not file_bytes:
+            raise ValueError("No file content provided.")
+
+        # Save a local copy immediately so the file is always available for preview/download,
+        # even if LLM extraction later fails
+        with open(local_path, "wb") as f:
+            f.write(file_bytes)
+
+        # Extract text
+        raw_text = extract_text_from_attachment(filename, file_bytes)
+        if not raw_text.strip():
+            raise ValueError("No text extracted from attachment.")
+
+        # Redact before sending to LLM
+        redacted_text = redact_sensitive_info(raw_text)
+
+        # LLM extraction
+        fields = extract_invoice_fields_via_llm(redacted_text, filename)
+
+        # Generate a clickable Gmail link (only if it's from an email)
+        gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}" if message_id != "MANUAL_UPLOAD" else "N/A"
+
+        row = {
+            "Vendor Name":         fields.get("vendor_name",     "N/A"),
+            "Final Total":         fields.get("final_total",     "N/A"),
+            "Currency":            fields.get("currency",        "N/A"),
+            "Due Date":            fields.get("due_date",        "N/A"),
+            "Payment Status":      fields.get("payment_status",  "N/A"),
+            "Extraction Status":   "SUCCESS",
+            "Invoice Number":      fields.get("invoice_number",  "N/A"),
+            "Line Items (Summary)":fields.get("line_items",      "N/A"),
+            "Invoice Date":        fields.get("invoice_date",    "N/A"),
+            "Subtotal":            fields.get("subtotal",        "N/A"),
+            "Tax":                 fields.get("tax",             "N/A"),
+            "Discount":            fields.get("discount",        "N/A"),
+            "Vendor Email":        fields.get("vendor_email",    "N/A"),
+            "Vendor Phone":        fields.get("vendor_phone",    "N/A"),
+            "Client Name":         fields.get("client_name",     "N/A"),
+            "Attachment Filename": filename,
+            "Source Email Link":   gmail_link,
+            "Local File Path":     local_url,
+            "Error Notes":         ""
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Failed to process {filename}: {e}")
+        gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}" if message_id != "MANUAL_UPLOAD" else "N/A"
+        row = {
+            "Vendor Name":         "N/A",
+            "Final Total":         "N/A",
+            "Currency":            "N/A",
+            "Due Date":            "N/A",
+            "Payment Status":      "N/A",
+            "Extraction Status":   "FAILED",
+            "Invoice Number":      "N/A",
+            "Line Items (Summary)":"N/A",
+            "Invoice Date":        "N/A",
+            "Subtotal":            "N/A",
+            "Tax":                 "N/A",
+            "Discount":            "N/A",
+            "Vendor Email":        "N/A",
+            "Vendor Phone":        "N/A",
+            "Client Name":         "N/A",
+            "Attachment Filename": filename,
+            "Source Email Link":   gmail_link,
+            "Local File Path":     local_url if os.path.exists(local_path) else "",
+            "Error Notes":         str(e)
+        }
+
+    append_to_csv(row)
+    return row
+
 def process_email_for_invoices(service, message_id: str, email_subject: str, parts: list):
     """
     Scan a single email's MIME parts for invoice attachments.
-    For each qualifying attachment, extract fields and save to CSV.
-
-    Args:
-        service       : authenticated Gmail API service
-        message_id    : Gmail message ID string
-        email_subject : subject line (for logging)
-        parts         : list of MIME parts from Gmail API payload
     """
     found_any = False
 
     def recurse_parts(parts_list):
         nonlocal found_any
         for part in parts_list:
-            # Recurse into nested multipart sections
             if part.get("mimeType", "").startswith("multipart"):
                 recurse_parts(part.get("parts", []))
                 continue
 
             filename = part.get("filename", "")
-            if not filename:
-                continue
-
-            if not is_invoice_attachment(filename, email_subject):
+            if not filename or not is_invoice_attachment(filename, email_subject):
                 continue
 
             found_any = True
             attachment_id = part.get("body", {}).get("attachmentId")
-            if not attachment_id:
-                logger.warning(f"No attachment ID found for {filename} in msg {message_id}")
-                continue
+            if not attachment_id: continue
 
             logger.info(f"📎 Invoice attachment detected: {filename} (email: {email_subject!r})")
-
-            try:
-                # Download raw bytes
-                file_bytes = download_attachment(service, message_id, attachment_id)
-
-                # Extract text
-                raw_text = extract_text_from_attachment(filename, file_bytes)
-                if not raw_text.strip():
-                    raise ValueError("No text extracted from attachment.")
-
-                # Redact before sending to LLM
-                redacted_text = redact_sensitive_info(raw_text)
-
-                # LLM extraction
-                fields = extract_invoice_fields_via_llm(redacted_text, filename)
-
-                # Generate a clickable Gmail link
-                gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
-
-                row = {
-                    "Vendor Name":         fields.get("vendor_name",     "N/A"),
-                    "Final Total":         fields.get("final_total",     "N/A"),
-                    "Currency":            fields.get("currency",        "N/A"),
-                    "Due Date":            fields.get("due_date",        "N/A"),
-                    "Payment Status":      fields.get("payment_status",  "N/A"),
-                    "Extraction Status":   "SUCCESS",
-                    "Invoice Number":      fields.get("invoice_number",  "N/A"),
-                    "Line Items (Summary)":fields.get("line_items",      "N/A"),
-                    "Invoice Date":        fields.get("invoice_date",    "N/A"),
-                    "Subtotal":            fields.get("subtotal",        "N/A"),
-                    "Tax":                 fields.get("tax",             "N/A"),
-                    "Discount":            fields.get("discount",        "N/A"),
-                    "Vendor Email":        fields.get("vendor_email",    "N/A"),
-                    "Vendor Phone":        fields.get("vendor_phone",    "N/A"),
-                    "Client Name":         fields.get("client_name",     "N/A"),
-                    "Attachment Filename": filename,
-                    "Source Email Link":   gmail_link,
-                    "Error Notes":         ""
-                }
-
-            except Exception as e:
-                logger.error(f"❌ Failed to process {filename}: {e}")
-                gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
-                row = {
-                    "Vendor Name":         "N/A",
-                    "Final Total":         "N/A",
-                    "Currency":            "N/A",
-                    "Due Date":            "N/A",
-                    "Payment Status":      "N/A",
-                    "Extraction Status":   "FAILED",
-                    "Invoice Number":      "N/A",
-                    "Line Items (Summary)":"N/A",
-                    "Invoice Date":        "N/A",
-                    "Subtotal":            "N/A",
-                    "Tax":                 "N/A",
-                    "Discount":            "N/A",
-                    "Vendor Email":        "N/A",
-                    "Vendor Phone":        "N/A",
-                    "Client Name":         "N/A",
-                    "Attachment Filename": filename,
-                    "Source Email Link":   gmail_link,
-                    "Error Notes":         str(e)
-                }
-
-            append_to_csv(row)
+            process_single_attachment(service, message_id, email_subject, filename, attachment_id=attachment_id)
 
     recurse_parts(parts)
-
     if not found_any:
         logger.info(f"No invoice attachments found in message {message_id}.")

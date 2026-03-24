@@ -78,3 +78,9 @@ Pillow
 
 # For Word extraction
 python-docx
+
+# Web App Backend
+fastapi
+uvicorn
+jinja2
+python-multipart
